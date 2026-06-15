@@ -4,9 +4,9 @@
 
 A command-line tool for analyzing Arch Linux AUR PKGBUILD files to identify security risks. Uses static analysis combined with AI-powered inspection.
 
-[![Build Status](https://img.shields.io/github/actions/workflow/status/programmersd21/aur_checker/ci.yml?style=flat-square)](https://github.com/programmersd21/aur_checker/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE.md)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg?style=flat-square)](https://www.python.org/)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/programmersd21/aur_checker/ci.yml?style=for-the-badge)](https://github.com/programmersd21/aur_checker/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE.md)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue?style=for-the-badge&logo=python)](https://www.python.org/)
 
 ## Overview
 
