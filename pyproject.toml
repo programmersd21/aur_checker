@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aur_checker"
+version = "1.0.0"
+description = "A CLI tool to analyze Arch Linux AUR PKGBUILDs for security risks."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "typer",
+    "rich",
+    "requests",
+    "pydantic>=2.9.0",
+    "google-genai",
+]
+
+[tool.setuptools]
+packages = ["ai", "cli", "core", "cache", "output", "scanner", "scoring", "features", "compat_platform"]
+
+[project.scripts]
+aur_checker = "cli.root:app"
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
