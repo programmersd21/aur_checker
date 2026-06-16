@@ -11,6 +11,14 @@ console = Console()
 
 @app.command("check", help="Run safety checks on a single AUR package.")
 def check_command(package: str = typer.Argument(..., help="AUR package name to check")):
+    """
+    Exit codes:
+    0 - Analysis completed, package appears safe (ALLOW)
+    1 - Analysis completed, high risk detected (DENY)
+    2 - Analysis completed, manual review needed (REVIEW)
+    3 - Package not found on AUR
+    4 - Unrecoverable error during analysis
+    """
     res = run_pipeline(package, skip_cache=state.no_cache)
     unrecoverable = any(not err.recoverable for err in res.errors)
 
@@ -19,10 +27,16 @@ def check_command(package: str = typer.Argument(..., help="AUR package name to c
     else:
         console.print(format_human(res, verbose=state.verbose))
 
-    if unrecoverable:
-        sys.exit(1)
-
+    # Exit code logic
     if not res.pkgbuild_raw and any(err.code == "FETCH_NOT_FOUND" for err in res.errors):
-        sys.exit(2)
+        sys.exit(3)  # Package not found
 
-    sys.exit(0)
+    if unrecoverable:
+        sys.exit(4)  # Unrecoverable error
+
+    if res.verdict == "ALLOW":
+        sys.exit(0)  # Safe
+    elif res.verdict == "DENY":
+        sys.exit(1)  # High risk
+    else:  # REVIEW
+        sys.exit(2)  # Manual review needed

@@ -48,11 +48,12 @@ def _call_gemini(
 
 
 def analyze_with_gemini(ctx: PipelineContext) -> PipelineContext:
+    """Run AI analysis. Returns context unchanged if AI is unavailable or fails."""
     api_key = os.getenv("AURCHECKER_AI_API_KEY")
     if not api_key:
         ctx.errors.append(
             ErrorDetail(
-                code="AI_DISABLED", stage="AI", message="AURCHECKER_AI_API_KEY env var is not set.", recoverable=True
+                code="AI_DISABLED", stage="AI", message="AI analysis skipped (no API key set).", recoverable=True
             )
         )
         return ctx
@@ -117,20 +118,25 @@ Output valid JSON only. No markdown. No prose."""
             ErrorDetail(
                 code="AI_TIMEOUT",
                 stage="AI",
-                message=f"AI did not respond within {int(deadline_s)}s.",
+                message=f"AI analysis timed out after {int(deadline_s)}s. Using static analysis only.",
                 recoverable=True,
             )
         )
-    except json.JSONDecodeError as e:
+    except json.JSONDecodeError:
         ctx.errors.append(
-            ErrorDetail(code="AI_SCHEMA_INVALID", stage="AI", message=f"JSON Decode Error: {str(e)}", recoverable=True)
+            ErrorDetail(
+                code="AI_SCHEMA_INVALID",
+                stage="AI",
+                message="AI returned invalid JSON. Using static analysis only.",
+                recoverable=True,
+            )
         )
     except Exception as e:
         ctx.errors.append(
             ErrorDetail(
-                code="AI_TIMEOUT" if "timeout" in str(e).lower() else "AI_SCHEMA_INVALID",
+                code="AI_FAILED",
                 stage="AI",
-                message=str(e),
+                message=f"AI analysis failed: {str(e)[:100]}. Using static analysis only.",
                 recoverable=True,
             )
         )

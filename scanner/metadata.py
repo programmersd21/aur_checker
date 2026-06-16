@@ -1,6 +1,6 @@
 import time
 import requests
-from core.context import PipelineContext, Metadata, ErrorDetail
+from core.context import PipelineContext, Metadata, TrustSignals, ErrorDetail
 
 
 def fetch_metadata(ctx: PipelineContext, timeout: int = 8) -> PipelineContext:
@@ -53,12 +53,39 @@ def fetch_metadata(ctx: PipelineContext, timeout: int = 8) -> PipelineContext:
                 else:
                     last_update_delta_days = "UNKNOWN"
 
+                votes = pkg_data.get("NumVotes", 0)
+                popularity = pkg_data.get("Popularity", 0.0)
+                out_of_date = pkg_data.get("OutOfDate") is not None
+
+                # Determine maintainer history
+                maintainer_history = "stable"
+                if orphan_status:
+                    if isinstance(package_age_days, int) and package_age_days > 90:
+                        maintainer_history = "orphan_adopted"
+                    else:
+                        maintainer_history = "new"
+                elif isinstance(package_age_days, int) and package_age_days < 30:
+                    maintainer_history = "new"
+
+                # Build trust signals
+                is_popular = votes > 100
+                ctx.trust_signals = TrustSignals(
+                    package_age_days=package_age_days,
+                    maintainer_history=maintainer_history,
+                    update_frequency_days=last_update_delta_days,
+                    is_popular=is_popular,
+                    out_of_date=out_of_date,
+                )
+
                 ctx.metadata = Metadata(
                     maintainer=maintainer_str,
                     orphan_status=orphan_status,
                     package_age_days=package_age_days,
                     last_update_delta_days=last_update_delta_days,
                     maintainer_changed="UNKNOWN",
+                    votes=votes,
+                    popularity=popularity,
+                    out_of_date=out_of_date,
                 )
                 return ctx
             else:

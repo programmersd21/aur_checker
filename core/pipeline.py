@@ -10,8 +10,9 @@ from compat_platform.paths import get_cache_dir
 
 
 def _combine_scores(ctx: PipelineContext) -> PipelineContext:
-    """Blend static analysis score with AI assessment (70% AI weight)."""
-    if not ctx.ai_analysis:
+    """Blend static analysis score with AI assessment (30% AI weight)."""
+    if not ctx.ai_analysis or not ctx.ai_enabled:
+        # Without AI, use static score only
         return ctx
 
     ai_score = ctx.ai_analysis.ai_risk_score
@@ -21,7 +22,8 @@ def _combine_scores(ctx: PipelineContext) -> PipelineContext:
     ctx.static_score = static_score
     ctx.ai_score = ai_score
 
-    combined = int(static_score * 0.3 + ai_score * 0.7)
+    # Reduced AI weight: 70% static, 30% AI
+    combined = int(static_score * 0.7 + ai_score * 0.3)
     combined = max(0, min(combined, 100))
     ctx.risk_score = combined
 
@@ -42,7 +44,7 @@ def _combine_scores(ctx: PipelineContext) -> PipelineContext:
     return ctx
 
 
-def run_pipeline(package: str, skip_cache: bool = False) -> PipelineContext:
+def run_pipeline(package: str, skip_cache: bool = False, enable_ai: bool = True) -> PipelineContext:
     cache_dir = get_cache_dir()
     ttl = int(os.getenv("AURCHECKER_CACHE_TTL", 3600))
     store = CacheStore(cache_dir, ttl)
@@ -52,7 +54,7 @@ def run_pipeline(package: str, skip_cache: bool = False) -> PipelineContext:
         if cached_ctx:
             return cached_ctx
 
-    ctx = PipelineContext(package=package)
+    ctx = PipelineContext(package=package, ai_enabled=enable_ai)
 
     ctx = fetch_pkgbuild(ctx, timeout=int(os.getenv("AURCHECKER_TIMEOUT", 10)))
     if any(not err.recoverable for err in ctx.errors):
@@ -70,8 +72,11 @@ def run_pipeline(package: str, skip_cache: bool = False) -> PipelineContext:
     if any(not err.recoverable for err in ctx.errors):
         return ctx
 
-    ctx = analyze_with_gemini(ctx)
-    ctx = _combine_scores(ctx)
+    # AI is optional - only run if enabled and API key is available
+    if enable_ai and os.getenv("AURCHECKER_AI_API_KEY"):
+        ctx = analyze_with_gemini(ctx)
+        ctx = _combine_scores(ctx)
+    # If AI is disabled or unavailable, static score remains the final score
 
     if not skip_cache:
         store.set(package, ctx)

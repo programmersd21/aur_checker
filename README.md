@@ -2,7 +2,7 @@
 
 ![demo](screenshots/image.png)
 
-A command-line tool for analyzing Arch Linux AUR PKGBUILD files to identify security risks. Uses static analysis combined with AI-powered inspection.
+A command-line tool for analyzing Arch Linux AUR PKGBUILD files to identify security risks. Uses static analysis with optional AI-powered inspection.
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/programmersd21/aur_checker/ci.yml?style=for-the-badge)](https://github.com/programmersd21/aur_checker/actions)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/programmersd21/aur_checker/codeql.yml?style=for-the-badge&label=CodeQL)](https://github.com/programmersd21/aur_checker/actions/workflows/codeql.yml)
@@ -11,12 +11,21 @@ A command-line tool for analyzing Arch Linux AUR PKGBUILD files to identify secu
 
 ## Overview
 
-aur_checker inspects PKGBUILD files for security vulnerabilities and suspicious patterns. It combines static regex-based analysis with AI review to produce a risk assessment score.
+aur_checker inspects PKGBUILD files for security vulnerabilities and suspicious patterns before you build packages. It combines context-aware static analysis with optional AI review to produce explainable risk assessments.
 
 **Analysis pipeline:**
 ```
-PKGBUILD → Fetch → Static Analysis → Metadata → Scoring → AI Review → Risk Verdict
+PKGBUILD → Fetch → Static Analysis → Metadata → Trust Signals → Scoring → [AI Review] → Risk Verdict
 ```
+
+**Key features:**
+- ✓ Context-aware detection to reduce false positives
+- ✓ Explainable risk scoring with detailed breakdowns
+- ✓ AUR trust signals (maintainer history, popularity, age)
+- ✓ Optional AI analysis (works without API key)
+- ✓ User-friendly output with plain language summaries
+- ✓ JSON output with stable schema for CI integration
+- ✓ Clear exit codes for automation
 
 ## Installation
 
@@ -37,6 +46,9 @@ aur_checker check keepassx2
 # Output as JSON
 aur_checker check --json keepassx2
 
+# Verbose mode with detailed signals
+aur_checker check --verbose keepassx2
+
 # Check multiple packages
 aur_checker batch keepassx2 visual-studio-code-bin
 
@@ -55,9 +67,11 @@ aur_checker clear-cache
 
 ## Configuration
 
-### API Key
+### API Key (Optional)
 
-Set your Google Generative AI API key as an environment variable:
+AI analysis is **optional**. aur_checker works without an API key using static analysis only.
+
+To enable AI analysis, set your Google Generative AI API key:
 
 ```bash
 # Linux/macOS
@@ -79,33 +93,87 @@ $env:AURCHECKER_AI_API_KEY="your-api-key"
 ### Analysis Process
 
 1. **Fetch** - Downloads PKGBUILD from AUR CGit
-2. **Static Analysis** - Scans for dangerous patterns via regex
-3. **Metadata** - Retrieves AUR RPC v5 package information
-4. **Scoring** - Computes 0-100 risk score from signals
-5. **AI Review** - Analyzes code structure and context (gemini-3.1-flash-lite)
-6. **Verdict** - Blends static (30%) and AI (70%) scores
+2. **Static Analysis** - Context-aware pattern detection (skips comments, distinguishes legitimate operations)
+3. **Metadata** - Retrieves AUR RPC v5 package information (maintainer, votes, age)
+4. **Trust Signals** - Evaluates maintainer history, popularity, update patterns, out-of-date status
+5. **Scoring** - Computes 0-100 risk score with explainable breakdown of contributing factors
+6. **AI Review** (optional) - Heuristic analysis for additional context if API key is set
+7. **Verdict** - Final assessment: Safe to review / Needs attention / High risk
 
 ### Risk Assessment
 
-| Score | Risk Level | Recommendation |
-|-------|-----------|-----------------|
-| 0-20 | Low | Safe to use |
-| 21-50 | Medium | Manual review recommended |
-| 51-100 | High | Do not use |
+| Score | Risk Level | Recommendation | Exit Code |
+|-------|-----------|-----------------|-----------|
+| 0-20 | Low | Safe to review | 0 |
+| 21-50 | Medium | Manual review recommended | 2 |
+| 51-100 | High | Do not use | 1 |
+
+**Note**: Without AI, static score is used directly (more conservative). With AI enabled, final score is 70% static + 30% AI.
+
+### Output Modes
+
+**Human output** (default):
+- User Summary: Simple verdict, key findings in plain language
+- Technical Details: Score breakdown, trust signals, metadata
+- AI Analysis: Heuristic insights (clearly labeled, if enabled)
+- Verbose mode: All detected signals with `--verbose`
+
+**JSON output** (`--json`):
+- Stable schema (v1.0.1) for automation
+- Includes score_breakdown, trust_signals, analysis_mode
+- Use with CI tools and security pipelines
+
+### Exit Codes (for CI integration)
+
+```
+0 - Analysis completed, package appears safe (ALLOW)
+1 - Analysis completed, high risk detected (DENY)
+2 - Analysis completed, manual review needed (REVIEW)
+3 - Package not found on AUR
+4 - Unrecoverable error during analysis
+```
 
 ### Security Signals
 
 The static analyzer detects:
 
-| Signal | Pattern | Risk Weight |
-|--------|---------|-------------|
-| `remote_exec` | Downloads piped to shell (curl/wget pipes) | 50 |
-| `external_calls` | Non-source HTTP/HTTPS URLs | 15 |
-| `pkg_manager` | Calls to npm, pip, cargo, go, gem, pacman, yay | 10 |
-| `orphan_adopted` | Package without active maintainer | 10 |
-| `obfuscation` | Base64, hex, eval, openssl, printf+xxd | 30 |
-| `system_mod` | Writes to /etc, /usr/lib, /opt, /boot | 30 |
-| `maintainer_changed` | Maintainer change detected | 0 |
+| Signal | Pattern | Risk Weight | Rationale |
+|--------|---------|-------------|-----------|
+| `remote_exec` | Downloads piped to shell (curl/wget → bash) | 50-70 | Direct code execution from internet |
+| `obfuscation` | Base64, hex, eval, encoding layers | 15-35 | Attempts to hide behavior |
+| `system_mod` | Writes to /etc, /boot, /usr/lib/systemd | 30 | Modifies sensitive system locations |
+| `maintainer_changed` | Maintainer change detected | 15 | Increased risk during transitions |
+| `orphan_adopted` | Package without active maintainer | 10 | No owner to respond to issues |
+| `pkg_manager` | npm, pip, cargo, go, gem (outside deps) | 8-12 | Risk if used in build scripts |
+| `external_calls` | Non-source HTTP/HTTPS URLs in execution | 5-15 | Network activity in build context |
+
+### Trust Signals
+
+| Signal | Description |
+|--------|-------------|
+| Package age | Days since first submission |
+| Maintainer history | stable / changed / orphan_adopted / new |
+| Update frequency | Days since last update |
+| Popularity | Vote count, >100 votes = popular |
+| Out of date | Flagged by users as outdated |
+
+## What aur_checker Can and Cannot Detect
+
+✅ **CAN detect:**
+- Direct remote code execution patterns (`curl | bash`)
+- System modification to sensitive directories
+- Encoding/obfuscation indicators
+- Suspicious trust signals (orphaned, new maintainer, out-of-date)
+- Risky patterns in build scripts
+
+❌ **CANNOT detect:**
+- Sophisticated multi-stage obfuscation
+- Logic bombs or conditional malware
+- Compromised upstream sources (even with checksums)
+- Post-install behavior of compiled binaries
+- Typosquatting or social engineering
+
+**See [SECURITY.md](SECURITY.md) for the complete threat model, limitations, and recommendations.**
 
 ## Development
 
@@ -126,32 +194,26 @@ ruff check .
 
 ```
 aur_checker/
-  __init__.py
-  cli.py              # Command-line interface
-  analyzer.py         # Static analysis engine
-  scorer.py           # Risk scoring logic
-  ai.py               # AI integration
-  aur_api.py          # AUR RPC client
-  cache.py            # Result caching
+  ai/              # AI integration (optional)
+  cache/           # Result caching
+  cli/             # Command-line interface
+  core/            # Pipeline and context
+  features/        # Static analysis (context-aware)
+  output/          # Human and JSON formatters
+  scanner/         # PKGBUILD and metadata fetching
+  scoring/         # Risk scoring with breakdown
+  compat_platform/ # Cross-platform compatibility
 ```
-
-## Architecture
-
-**Core components:**
-
-- **CLI** - Command-line interface with multiple analysis modes
-- **Static Analyzer** - Regex-based pattern detection
-- **Risk Scorer** - Aggregates signals into single score
-- **AI Engine** - Integrates Google Generative AI for context analysis
-- **Cache** - Local storage for previous analyses
-- **AUR API Client** - Fetches package metadata and PKGBUILD files
 
 ## Limitations
 
 - AI analysis requires valid API key and internet connection
-- Static analysis uses pattern matching and may miss sophisticated obfuscation
+- Static analysis uses context-aware patterns but may miss sophisticated obfuscation
 - Risk scores are heuristic-based and should inform, not replace, manual review
-- AI responses depend on model quality and may vary between calls
+- AI responses are non-deterministic and clearly labeled as heuristic
+- Cannot analyze post-build behavior or compiled binary contents
+
+**Always read PKGBUILDs manually before building AUR packages.**
 
 ## Contributing
 
@@ -160,6 +222,10 @@ Contributions welcome. Please open an issue or pull request on GitHub.
 ## License
 
 MIT License. See [LICENSE.md](LICENSE.md) for details.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for the threat model, what aur_checker can and cannot detect, and how to report security issues.
 
 ---
 
